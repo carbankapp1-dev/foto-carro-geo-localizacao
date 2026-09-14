@@ -155,7 +155,7 @@
     border: 1px solid #45d492;
     color: #45d492;
   }
-  #btnUpload:disabled, #btnDownload:disabled {
+  #btnShoot:disabled {
     opacity: 0.5;
   }
 </style>
@@ -172,35 +172,29 @@
   <div class="field-row">
     <div class="field field-dn">
       <label for="inputDN">Código DN</label>
-      <input id="inputDN" type="text" inputmode="numeric" maxlength="5" placeholder="60411" autocomplete="off">
+      <input id="inputDN" type="text" inputmode="numeric" maxlength="5" autocomplete="off">
     </div>
     <div class="field">
       <label for="inputLoja">Nome da loja</label>
-      <input id="inputLoja" type="text" placeholder="Ex: Loja Centro" autocomplete="off">
+      <input id="inputLoja" type="text" autocomplete="off">
     </div>
   </div>
 
   <div class="field-row">
     <div class="field">
       <label for="inputCPF">CPF do responsável</label>
-      <input id="inputCPF" type="text" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" autocomplete="off">
+      <input id="inputCPF" type="text" inputmode="numeric" maxlength="14" autocomplete="off">
     </div>
     <div class="field">
       <label for="inputResp">Nome do responsável</label>
-      <input id="inputResp" type="text" placeholder="Ex: João da Silva" autocomplete="off">
+      <input id="inputResp" type="text" autocomplete="off">
     </div>
   </div>
 
   <div id="status" class="status">Ligando câmera…</div>
 
   <div class="controls">
-    <button id="btnShoot" class="btn-primary" disabled>Tirar foto</button>
-    <button id="btnRetry" class="btn-secondary hidden">Nova foto</button>
-  </div>
-
-  <div class="controls">
-    <button id="btnUpload" class="btn-primary hidden">Enviar e gerar QR Code</button>
-    <button id="btnDownload" class="btn-secondary hidden" disabled>Salvar foto validada</button>
+    <button id="btnShoot" class="btn-primary" disabled>Tirar foto e salvar</button>
   </div>
 
   <div id="uploadStatus" class="status hidden"></div>
@@ -223,9 +217,6 @@ const preview = document.getElementById('preview');
 const statusEl = document.getElementById('status');
 const infoBox = document.getElementById('infoBox');
 const btnShoot = document.getElementById('btnShoot');
-const btnRetry = document.getElementById('btnRetry');
-const btnUpload = document.getElementById('btnUpload');
-const btnDownload = document.getElementById('btnDownload');
 const uploadStatus = document.getElementById('uploadStatus');
 const inputDN = document.getElementById('inputDN');
 const inputLoja = document.getElementById('inputLoja');
@@ -416,42 +407,12 @@ function drawInfoOverlay(ctx, w, h, reservedRight) {
 
 let rawFrameCanvas = document.createElement('canvas');
 
-function capturePhoto() {
-  const w = video.videoWidth;
-  const h = video.videoHeight;
-  canvas.width = w;
-  canvas.height = h;
-  rawFrameCanvas.width = w;
-  rawFrameCanvas.height = h;
-
-  // Guarda o frame cru (sem marca d'água/texto) para poder redesenhar
-  // do zero na hora do envio, sem duplicar as camadas
-  rawFrameCanvas.getContext('2d').drawImage(video, 0, 0, w, h);
-
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(rawFrameCanvas, 0, 0, w, h);
-  drawTiledWatermark(ctx, w, h);
-  drawInfoOverlay(ctx, w, h, 0);
-
-  preview.src = canvas.toDataURL('image/jpeg', 0.92);
-  preview.classList.remove('hidden');
-  video.classList.add('hidden');
-  btnShoot.classList.add('hidden');
-  btnRetry.classList.remove('hidden');
-  btnUpload.classList.remove('hidden');
-  btnDownload.classList.add('hidden');
-  uploadStatus.classList.add('hidden');
-}
-
 function resetToCamera() {
   preview.classList.add('hidden');
   video.classList.remove('hidden');
-  btnShoot.classList.remove('hidden');
-  btnRetry.classList.add('hidden');
-  btnUpload.classList.add('hidden');
-  btnUpload.disabled = false;
-  btnDownload.classList.add('hidden');
   uploadStatus.classList.add('hidden');
+  btnShoot.disabled = false;
+  btnShoot.textContent = 'Tirar foto e salvar';
 }
 
 // ---------- Gerar QR Code e desenhar no canvas ----------
@@ -525,13 +486,13 @@ async function sha256FromDataUrl(dataUrl) {
   return Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// ---------- Envio para o Firebase + geração do QR ----------
-async function uploadAndValidate() {
+// ---------- Ação única: tira a foto, gera QR, envia e salva ----------
+async function shootAndSave() {
   const cpf = inputCPF.value.trim();
   const responsavel = inputResp.value.trim();
 
   if (!responsavel) {
-    setUploadStatus('Preencha o nome do responsável antes de enviar.', 'err');
+    setUploadStatus('Preencha o nome do responsável antes de tirar a foto.', 'err');
     return;
   }
   if (!isValidCPF(cpf)) {
@@ -539,29 +500,45 @@ async function uploadAndValidate() {
     return;
   }
 
-  btnUpload.disabled = true;
-  setUploadStatus('Autenticando…');
+  btnShoot.disabled = true;
+  btnShoot.textContent = 'Processando…';
+  setUploadStatus('Capturando foto…');
+
+  // Captura o frame atual da câmera
+  const w = video.videoWidth;
+  const h = video.videoHeight;
+  canvas.width = w;
+  canvas.height = h;
+  rawFrameCanvas.width = w;
+  rawFrameCanvas.height = h;
+  rawFrameCanvas.getContext('2d').drawImage(video, 0, 0, w, h);
+
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(rawFrameCanvas, 0, 0, w, h);
+  drawTiledWatermark(ctx, w, h);
+  drawInfoOverlay(ctx, w, h, 0);
+  preview.src = canvas.toDataURL('image/jpeg', 0.92);
+  preview.classList.remove('hidden');
+  video.classList.add('hidden');
 
   try {
+    setUploadStatus('Autenticando…');
     await ensureAuth();
 
     const id = (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2));
     const verifyUrl = `${VERIFY_BASE_URL}?id=${id}`;
 
     setUploadStatus('Gerando QR Code…');
-    const w = canvas.width, h = canvas.height;
-    const ctx = canvas.getContext('2d');
-
-    // Redesenha do zero a partir do frame cru — evita duplicar
-    // a marca d'água/texto que já tinha sido desenhada na prévia
+    // Redesenha do zero a partir do frame cru, já com espaço reservado pro QR
     ctx.clearRect(0, 0, w, h);
     ctx.drawImage(rawFrameCanvas, 0, 0, w, h);
     drawTiledWatermark(ctx, w, h);
     const boxHeight = drawInfoOverlay(ctx, w, h, w * 0.28);
     await drawQrOnCanvas(ctx, w, h, verifyUrl, boxHeight);
 
-    // Versão em alta qualidade fica só no aparelho (botão "Salvar foto validada")
-    preview.src = canvas.toDataURL('image/jpeg', 0.92);
+    // Versão final em alta qualidade (com QR) — é o que vai ser baixado
+    const finalDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    preview.src = finalDataUrl;
 
     setUploadStatus('Compactando foto para o banco de dados…');
     const compressed = await compressToFit(canvas, MAX_FOTO_BASE64_LEN);
@@ -589,34 +566,30 @@ async function uploadAndValidate() {
       createdAt
     });
 
-    setUploadStatus('Validado com sucesso ✔ — ID ' + id, 'ok');
-    btnUpload.classList.add('hidden');
-    btnDownload.classList.remove('hidden');
-    btnDownload.disabled = false;
+    // Baixa a foto final automaticamente
+    const link = document.createElement('a');
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const dn = inputDN.value.trim().replace(/\s+/g, '-') || 'sem-dn';
+    link.download = `foto-${dn}-${ts}.jpg`;
+    link.href = finalDataUrl;
+    link.click();
+
+    setUploadStatus('Salvo com sucesso ✔ — ID ' + id, 'ok');
+
+    // Limpa os campos e volta pra câmera, pronta para a próxima foto
+    inputDN.value = '';
+    inputLoja.value = '';
+    inputCPF.value = '';
+    inputResp.value = '';
+    setTimeout(resetToCamera, 900);
   } catch (err) {
-    setUploadStatus('Erro ao enviar: ' + err.message, 'err');
-    btnUpload.disabled = false;
+    setUploadStatus('Erro ao salvar: ' + err.message, 'err');
+    btnShoot.disabled = false;
+    btnShoot.textContent = 'Tirar foto e salvar';
   }
 }
 
-btnShoot.addEventListener('click', capturePhoto);
-btnRetry.addEventListener('click', resetToCamera);
-btnUpload.addEventListener('click', uploadAndValidate);
-btnDownload.addEventListener('click', () => {
-  const link = document.createElement('a');
-  const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  const dn = inputDN.value.trim().replace(/\s+/g, '-') || 'sem-dn';
-  link.download = `foto-${dn}-${ts}.jpg`;
-  link.href = canvas.toDataURL('image/jpeg', 0.92);
-  link.click();
-
-  // Limpa os campos e volta pra câmera, pronta para a próxima foto
-  inputDN.value = '';
-  inputLoja.value = '';
-  inputCPF.value = '';
-  inputResp.value = '';
-  resetToCamera();
-});
+btnShoot.addEventListener('click', shootAndSave);
 
 startCamera();
 startGeolocation();
