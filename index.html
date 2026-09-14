@@ -436,14 +436,22 @@ function drawInfoOverlay(ctx, w, h, reservedRight) {
   return boxHeight;
 }
 
+let rawFrameCanvas = document.createElement('canvas');
+
 function capturePhoto() {
   const w = video.videoWidth;
   const h = video.videoHeight;
   canvas.width = w;
   canvas.height = h;
-  const ctx = canvas.getContext('2d');
+  rawFrameCanvas.width = w;
+  rawFrameCanvas.height = h;
 
-  ctx.drawImage(video, 0, 0, w, h);
+  // Guarda o frame cru (sem marca d'água/texto) para poder redesenhar
+  // do zero na hora do envio, sem duplicar as camadas
+  rawFrameCanvas.getContext('2d').drawImage(video, 0, 0, w, h);
+
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(rawFrameCanvas, 0, 0, w, h);
   drawTiledWatermark(ctx, w, h);
   drawInfoOverlay(ctx, w, h, 0);
 
@@ -463,6 +471,7 @@ function resetToCamera() {
   btnShoot.classList.remove('hidden');
   btnRetry.classList.add('hidden');
   btnUpload.classList.add('hidden');
+  btnUpload.disabled = false;
   btnDownload.classList.add('hidden');
   uploadStatus.classList.add('hidden');
 }
@@ -564,6 +573,12 @@ async function uploadAndValidate() {
     setUploadStatus('Gerando QR Code…');
     const w = canvas.width, h = canvas.height;
     const ctx = canvas.getContext('2d');
+
+    // Redesenha do zero a partir do frame cru — evita duplicar
+    // a marca d'água/texto que já tinha sido desenhada na prévia
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(rawFrameCanvas, 0, 0, w, h);
+    drawTiledWatermark(ctx, w, h);
     const boxHeight = drawInfoOverlay(ctx, w, h, w * 0.28);
     await drawQrOnCanvas(ctx, w, h, verifyUrl, boxHeight);
 
@@ -616,6 +631,13 @@ btnDownload.addEventListener('click', () => {
   link.download = `foto-${dn}-${ts}.jpg`;
   link.href = canvas.toDataURL('image/jpeg', 0.92);
   link.click();
+
+  // Limpa os campos e volta pra câmera, pronta para a próxima foto
+  inputDN.value = '';
+  inputLoja.value = '';
+  inputCPF.value = '';
+  inputResp.value = '';
+  resetToCamera();
 });
 
 startCamera();
