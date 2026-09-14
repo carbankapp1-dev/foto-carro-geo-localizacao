@@ -1,4 +1,4 @@
-const CACHE_NAME = 'camera-geo-v2';
+const CACHE_NAME = 'camera-geo-v4';
 const ASSETS = [
   './',
   './index.html',

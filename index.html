@@ -47,30 +47,13 @@
     padding-bottom: env(safe-area-inset-bottom);
     user-select: none;
   }
-  header {
-    width: 100%;
-    padding: 16px 16px 12px;
-    text-align: center;
-    border-bottom: 1px solid #1b2e4a;
-  }
-  header h1 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-    letter-spacing: 0.2px;
-  }
-  header p {
-    margin: 4px 0 0;
-    font-size: 12.5px;
-    color: #7f93ad;
-  }
   main {
     width: 100%;
     max-width: 480px;
-    padding: 14px 16px calc(24px + env(safe-area-inset-bottom));
+    padding: calc(10px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
   }
   .field-row {
     display: flex;
@@ -112,7 +95,7 @@
   .stage {
     position: relative;
     width: 100%;
-    aspect-ratio: 3/4;
+    aspect-ratio: 4/3.3;
     background: #000;
     border-radius: 14px;
     overflow: hidden;
@@ -179,12 +162,13 @@
 </head>
 <body>
 
-<header>
-  <h1>Câmera Geolocalizada</h1>
-  <p>Marca a foto com código DN, loja, endereço e data/hora</p>
-</header>
-
 <main>
+  <div class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas" class="hidden"></canvas>
+    <img id="preview" class="preview hidden" alt="Foto capturada">
+  </div>
+
   <div class="field-row">
     <div class="field field-dn">
       <label for="inputDN">Código DN</label>
@@ -205,12 +189,6 @@
       <label for="inputResp">Nome do responsável</label>
       <input id="inputResp" type="text" placeholder="Ex: João da Silva" autocomplete="off">
     </div>
-  </div>
-
-  <div class="stage">
-    <video id="video" autoplay playsinline muted></video>
-    <canvas id="canvas" class="hidden"></canvas>
-    <img id="preview" class="preview hidden" alt="Foto capturada">
   </div>
 
   <div id="status" class="status">Ligando câmera…</div>
