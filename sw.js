@@ -1,8 +1,10 @@
-const CACHE_NAME = 'camera-geo-v1';
+const CACHE_NAME = 'camera-geo-v2';
 const ASSETS = [
   './',
   './index.html',
+  './verify.html',
   './manifest.json',
+  './firebase-config.js',
   './icons/android-chrome-192x192.png',
   './icons/android-chrome-512x512.png',
   './icons/apple-touch-icon.png',
@@ -31,8 +33,13 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Nunca cachear chamadas de API externas (Nominatim) — precisam ser sempre em tempo real
-  if (url.hostname.includes('nominatim.openstreetmap.org')) {
+  // Nunca cachear chamadas externas de dados dinâmicos — precisam ser sempre em tempo real
+  if (
+    url.hostname.includes('nominatim.openstreetmap.org') ||
+    url.hostname.includes('googleapis.com') ||
+    url.hostname.includes('firebaseio.com') ||
+    url.hostname.includes('firestore.googleapis.com')
+  ) {
     return;
   }
 

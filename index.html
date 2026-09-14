@@ -17,6 +17,16 @@
 <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16x16.png">
 <link rel="shortcut icon" href="favicon.ico">
 
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="firebase-config.js"></script>
+
+<!-- Gerador de QR Code -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
@@ -71,6 +81,10 @@
     display: flex;
     flex-direction: column;
     gap: 5px;
+    min-width: 0;
+  }
+  .field.field-dn {
+    flex: 0 0 92px;
   }
   .field label {
     font-size: 12px;
@@ -85,6 +99,12 @@
     padding: 10px 11px;
     font-size: 15px;
     outline: none;
+    width: 100%;
+    min-width: 0;
+  }
+  .field-dn input {
+    text-align: center;
+    padding: 10px 6px;
   }
   .field input:focus {
     border-color: #45d492;
@@ -152,6 +172,9 @@
     border: 1px solid #45d492;
     color: #45d492;
   }
+  #btnUpload:disabled, #btnDownload:disabled {
+    opacity: 0.5;
+  }
 </style>
 </head>
 <body>
@@ -163,13 +186,24 @@
 
 <main>
   <div class="field-row">
-    <div class="field">
+    <div class="field field-dn">
       <label for="inputDN">Código DN</label>
-      <input id="inputDN" type="text" placeholder="Ex: DN-0231" autocomplete="off">
+      <input id="inputDN" type="text" inputmode="numeric" maxlength="5" placeholder="60411" autocomplete="off">
     </div>
     <div class="field">
       <label for="inputLoja">Nome da loja</label>
       <input id="inputLoja" type="text" placeholder="Ex: Loja Centro" autocomplete="off">
+    </div>
+  </div>
+
+  <div class="field-row">
+    <div class="field">
+      <label for="inputCPF">CPF do responsável</label>
+      <input id="inputCPF" type="text" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="inputResp">Nome do responsável</label>
+      <input id="inputResp" type="text" placeholder="Ex: João da Silva" autocomplete="off">
     </div>
   </div>
 
@@ -184,8 +218,16 @@
   <div class="controls">
     <button id="btnShoot" class="btn-primary" disabled>Tirar foto</button>
     <button id="btnRetry" class="btn-secondary hidden">Nova foto</button>
-    <button id="btnDownload" class="btn-secondary hidden">Salvar foto</button>
   </div>
+
+  <div class="controls">
+    <button id="btnUpload" class="btn-primary hidden">Enviar e gerar QR Code</button>
+    <button id="btnDownload" class="btn-secondary hidden" disabled>Salvar foto validada</button>
+  </div>
+
+  <div id="uploadStatus" class="status hidden"></div>
+
+  <div id="qrHolder" style="display:none;"></div>
 
   <button id="installBtn">Instalar aplicativo</button>
 
@@ -204,10 +246,15 @@ const statusEl = document.getElementById('status');
 const infoBox = document.getElementById('infoBox');
 const btnShoot = document.getElementById('btnShoot');
 const btnRetry = document.getElementById('btnRetry');
+const btnUpload = document.getElementById('btnUpload');
 const btnDownload = document.getElementById('btnDownload');
+const uploadStatus = document.getElementById('uploadStatus');
 const inputDN = document.getElementById('inputDN');
 const inputLoja = document.getElementById('inputLoja');
+const inputCPF = document.getElementById('inputCPF');
+const inputResp = document.getElementById('inputResp');
 const installBtn = document.getElementById('installBtn');
+const qrHolder = document.getElementById('qrHolder');
 
 let stream = null;
 let currentCoords = null;
@@ -220,6 +267,35 @@ logoImg.src = 'icons/marca-dagua.png';
 function setStatus(msg, kind) {
   statusEl.textContent = msg;
   statusEl.className = 'status' + (kind ? ' ' + kind : '');
+}
+function setUploadStatus(msg, kind) {
+  uploadStatus.textContent = msg;
+  uploadStatus.className = 'status' + (kind ? ' ' + kind : '');
+  uploadStatus.classList.remove('hidden');
+}
+
+// ---------- Máscara e validação de CPF ----------
+inputCPF.addEventListener('input', () => {
+  let v = inputCPF.value.replace(/\D/g, '').slice(0, 11);
+  if (v.length > 9) v = v.replace(/(\d{3})(\d{3})(\d{3})(\d{1,2})/, '$1.$2.$3-$4');
+  else if (v.length > 6) v = v.replace(/(\d{3})(\d{3})(\d{1,3})/, '$1.$2.$3');
+  else if (v.length > 3) v = v.replace(/(\d{3})(\d{1,3})/, '$1.$2');
+  inputCPF.value = v;
+});
+
+function isValidCPF(cpf) {
+  cpf = (cpf || '').replace(/\D/g, '');
+  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += parseInt(cpf[i]) * (10 - i);
+  let rev = 11 - (sum % 11);
+  if (rev >= 10) rev = 0;
+  if (rev !== parseInt(cpf[9])) return false;
+  sum = 0;
+  for (let i = 0; i < 10; i++) sum += parseInt(cpf[i]) * (11 - i);
+  rev = 11 - (sum % 11);
+  if (rev >= 10) rev = 0;
+  return rev === parseInt(cpf[10]);
 }
 
 // ---------- Câmera ----------
@@ -295,7 +371,9 @@ function drawTiledWatermark(ctx, w, h) {
   ctx.restore();
 }
 
-function drawInfoOverlay(ctx, w, h) {
+// Reserva espaço à direita para o QR Code quando reservedRight > 0
+function drawInfoOverlay(ctx, w, h, reservedRight) {
+  reservedRight = reservedRight || 0;
   const now = new Date();
   const dateStr = now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR');
   const coordStr = currentCoords
@@ -321,7 +399,7 @@ function drawInfoOverlay(ctx, w, h) {
   ctx.font = `${fontSize}px -apple-system, Arial, sans-serif`;
   ctx.textBaseline = 'bottom';
 
-  const maxWidth = w - pad * 2;
+  const maxWidth = w - pad * 2 - reservedRight;
   function wrapLine(text) {
     const words = text.split(' ');
     const out = [];
@@ -343,7 +421,7 @@ function drawInfoOverlay(ctx, w, h) {
   lines.forEach((l) => { allLines = allLines.concat(wrapLine(l)); });
 
   const lh = fontSize * 1.35;
-  const boxHeight = allLines.length * lh + pad * 1.4;
+  const boxHeight = Math.max(allLines.length * lh + pad * 1.4, reservedRight > 0 ? reservedRight / 0.78 : 0);
 
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.fillRect(0, h - boxHeight, w, boxHeight);
@@ -354,6 +432,8 @@ function drawInfoOverlay(ctx, w, h) {
     ctx.fillText(allLines[i], pad, ty);
     ty -= lh;
   }
+
+  return boxHeight;
 }
 
 function capturePhoto() {
@@ -365,14 +445,16 @@ function capturePhoto() {
 
   ctx.drawImage(video, 0, 0, w, h);
   drawTiledWatermark(ctx, w, h);
-  drawInfoOverlay(ctx, w, h);
+  drawInfoOverlay(ctx, w, h, 0);
 
   preview.src = canvas.toDataURL('image/jpeg', 0.92);
   preview.classList.remove('hidden');
   video.classList.add('hidden');
   btnShoot.classList.add('hidden');
   btnRetry.classList.remove('hidden');
-  btnDownload.classList.remove('hidden');
+  btnUpload.classList.remove('hidden');
+  btnDownload.classList.add('hidden');
+  uploadStatus.classList.add('hidden');
 }
 
 function resetToCamera() {
@@ -380,11 +462,153 @@ function resetToCamera() {
   video.classList.remove('hidden');
   btnShoot.classList.remove('hidden');
   btnRetry.classList.add('hidden');
+  btnUpload.classList.add('hidden');
   btnDownload.classList.add('hidden');
+  uploadStatus.classList.add('hidden');
+}
+
+// ---------- Gerar QR Code e desenhar no canvas ----------
+async function drawQrOnCanvas(ctx, w, h, verifyUrl, boxHeight) {
+  qrHolder.innerHTML = '';
+  const qrSize = Math.round(Math.min(w * 0.24, boxHeight * 0.78));
+
+  await new Promise((resolve) => {
+    new QRCode(qrHolder, {
+      text: verifyUrl,
+      width: qrSize,
+      height: qrSize,
+      correctLevel: QRCode.CorrectLevel.M
+    });
+    setTimeout(resolve, 120); // dá tempo da lib renderizar
+  });
+
+  const qrCanvas = qrHolder.querySelector('canvas');
+  const qrImgEl = qrHolder.querySelector('img');
+  const pad = w * 0.03;
+  const boxX = w - qrSize - pad * 1.6;
+  const boxY = h - boxHeight + (boxHeight - qrSize) / 2 - pad * 0.2;
+
+  // fundo branco atrás do QR para garantir leitura
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(boxX - 6, boxY - 6, qrSize + 12, qrSize + 12);
+
+  if (qrCanvas) {
+    ctx.drawImage(qrCanvas, boxX, boxY, qrSize, qrSize);
+  } else if (qrImgEl) {
+    ctx.drawImage(qrImgEl, boxX, boxY, qrSize, qrSize);
+  }
+}
+
+// ---------- Compressão para caber no limite de 1 MB do Firestore ----------
+async function compressToFit(sourceCanvas, maxBase64Len) {
+  let quality = 0.82;
+  let scale = 1;
+
+  for (let attempt = 0; attempt < 9; attempt++) {
+    const w = Math.max(1, Math.round(sourceCanvas.width * scale));
+    const h = Math.max(1, Math.round(sourceCanvas.height * scale));
+
+    let workCanvas = sourceCanvas;
+    if (scale < 1) {
+      workCanvas = document.createElement('canvas');
+      workCanvas.width = w;
+      workCanvas.height = h;
+      workCanvas.getContext('2d').drawImage(sourceCanvas, 0, 0, w, h);
+    }
+
+    const dataUrl = workCanvas.toDataURL('image/jpeg', quality);
+    const base64 = dataUrl.split(',')[1];
+
+    if (base64.length <= maxBase64Len || attempt === 8) {
+      return { dataUrl, base64, width: w, height: h, quality };
+    }
+
+    if (quality > 0.45) {
+      quality -= 0.12;
+    } else {
+      scale *= 0.8;
+    }
+  }
+}
+
+async function sha256FromDataUrl(dataUrl) {
+  const res = await fetch(dataUrl);
+  const buf = await res.arrayBuffer();
+  const hashBuf = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ---------- Envio para o Firebase + geração do QR ----------
+async function uploadAndValidate() {
+  const cpf = inputCPF.value.trim();
+  const responsavel = inputResp.value.trim();
+
+  if (!responsavel) {
+    setUploadStatus('Preencha o nome do responsável antes de enviar.', 'err');
+    return;
+  }
+  if (!isValidCPF(cpf)) {
+    setUploadStatus('CPF inválido. Confira os números digitados.', 'err');
+    return;
+  }
+
+  btnUpload.disabled = true;
+  setUploadStatus('Autenticando…');
+
+  try {
+    await ensureAuth();
+
+    const id = (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2));
+    const verifyUrl = `${VERIFY_BASE_URL}?id=${id}`;
+
+    setUploadStatus('Gerando QR Code…');
+    const w = canvas.width, h = canvas.height;
+    const ctx = canvas.getContext('2d');
+    const boxHeight = drawInfoOverlay(ctx, w, h, w * 0.28);
+    await drawQrOnCanvas(ctx, w, h, verifyUrl, boxHeight);
+
+    // Versão em alta qualidade fica só no aparelho (botão "Salvar foto validada")
+    preview.src = canvas.toDataURL('image/jpeg', 0.92);
+
+    setUploadStatus('Compactando foto para o banco de dados…');
+    const compressed = await compressToFit(canvas, MAX_FOTO_BASE64_LEN);
+    const imageHash = await sha256FromDataUrl(compressed.dataUrl);
+
+    setUploadStatus('Gravando registro…');
+    const createdAt = firebase.firestore.FieldValue.serverTimestamp();
+
+    await db.collection('fotos').doc(id).set({
+      createdAt,
+      dn: inputDN.value.trim(),
+      loja: inputLoja.value.trim(),
+      responsavel,
+      lat: currentCoords ? currentCoords.lat : null,
+      lon: currentCoords ? currentCoords.lon : null,
+      address: currentAddress,
+      imageHash,
+      foto: compressed.base64,
+      mimeType: 'image/jpeg'
+    });
+
+    await db.collection('fotos_privado').doc(id).set({
+      cpf,
+      responsavel,
+      createdAt
+    });
+
+    setUploadStatus('Validado com sucesso ✔ — ID ' + id, 'ok');
+    btnUpload.classList.add('hidden');
+    btnDownload.classList.remove('hidden');
+    btnDownload.disabled = false;
+  } catch (err) {
+    setUploadStatus('Erro ao enviar: ' + err.message, 'err');
+    btnUpload.disabled = false;
+  }
 }
 
 btnShoot.addEventListener('click', capturePhoto);
 btnRetry.addEventListener('click', resetToCamera);
+btnUpload.addEventListener('click', uploadAndValidate);
 btnDownload.addEventListener('click', () => {
   const link = document.createElement('a');
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
