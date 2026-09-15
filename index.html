@@ -108,6 +108,33 @@
     object-fit: cover;
   }
   .hidden { display: none !important; }
+  .plate-guide {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    pointer-events: none;
+  }
+  .plate-guide-label {
+    background: rgba(0,0,0,0.55);
+    color: #ffffff;
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+  .plate-guide-frame {
+    width: 62%;
+    aspect-ratio: 3.6/1;
+    border: 3px dashed rgba(255,255,255,0.85);
+    border-radius: 8px;
+    box-shadow: 0 0 0 2000px rgba(0,0,0,0.28);
+  }
   .status {
     font-size: 13px;
     color: #7f93ad;
@@ -167,6 +194,10 @@
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas" class="hidden"></canvas>
     <img id="preview" class="preview hidden" alt="Foto capturada">
+    <div id="plateGuide" class="plate-guide">
+      <div class="plate-guide-label">Posicione a placa aqui</div>
+      <div class="plate-guide-frame"></div>
+    </div>
   </div>
 
   <div class="field-row">
@@ -212,6 +243,7 @@
 
 <script>
 const video = document.getElementById('video');
+const plateGuide = document.getElementById('plateGuide');
 const canvas = document.getElementById('canvas');
 const preview = document.getElementById('preview');
 const statusEl = document.getElementById('status');
@@ -410,6 +442,7 @@ let rawFrameCanvas = document.createElement('canvas');
 function resetToCamera() {
   preview.classList.add('hidden');
   video.classList.remove('hidden');
+  plateGuide.classList.remove('hidden');
   uploadStatus.classList.add('hidden');
   btnShoot.disabled = false;
   btnShoot.textContent = 'Tirar foto e compartilhar';
@@ -543,6 +576,7 @@ async function shootAndSave() {
   preview.src = canvas.toDataURL('image/jpeg', 0.92);
   preview.classList.remove('hidden');
   video.classList.add('hidden');
+  plateGuide.classList.add('hidden');
 
   try {
     const id = (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2));
