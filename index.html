@@ -383,12 +383,20 @@ function drawInfoOverlay(ctx, w, h, reservedRight) {
 
   const dn = inputDN.value.trim();
   const loja = inputLoja.value.trim();
+  const cpf = inputCPF.value.trim();
+  const responsavel = inputResp.value.trim();
 
   const lines = [];
   if (dn || loja) {
     const parts = [];
     if (dn) parts.push('DN: ' + dn);
     if (loja) parts.push('Loja: ' + loja);
+    lines.push(parts.join('   •   '));
+  }
+  if (responsavel || cpf) {
+    const parts = [];
+    if (responsavel) parts.push('Responsável: ' + responsavel);
+    if (cpf) parts.push('CPF: ' + cpf);
     lines.push(parts.join('   •   '));
   }
   lines.push(dateStr);
