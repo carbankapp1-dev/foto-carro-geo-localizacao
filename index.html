@@ -194,7 +194,7 @@
   <div id="status" class="status">Ligando câmera…</div>
 
   <div class="controls">
-    <button id="btnShoot" class="btn-primary" disabled>Tirar foto e salvar</button>
+    <button id="btnShoot" class="btn-primary" disabled>Tirar foto e compartilhar</button>
   </div>
 
   <div id="uploadStatus" class="status hidden"></div>
@@ -412,7 +412,7 @@ function resetToCamera() {
   video.classList.remove('hidden');
   uploadStatus.classList.add('hidden');
   btnShoot.disabled = false;
-  btnShoot.textContent = 'Tirar foto e salvar';
+  btnShoot.textContent = 'Tirar foto e compartilhar';
 }
 
 // ---------- Gerar QR Code e desenhar no canvas ----------
@@ -486,6 +486,29 @@ async function sha256FromDataUrl(dataUrl) {
   return Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// ---------- Compartilhar (WhatsApp etc.) ou baixar a foto ----------
+async function shareOrDownloadPhoto(dataUrl, filename) {
+  try {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    const file = new File([blob], filename, { type: 'image/jpeg' });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file] });
+      return;
+    }
+  } catch (err) {
+    if (err && err.name === 'AbortError') return; // usuário fechou a tela de compartilhar, tudo bem
+    // qualquer outro erro cai no fallback de download abaixo
+  }
+
+  // Fallback para navegadores sem suporte a compartilhamento de arquivos (ex: desktop)
+  const link = document.createElement('a');
+  link.download = filename;
+  link.href = dataUrl;
+  link.click();
+}
+
 // ---------- Ação única: tira a foto, gera QR, envia e salva ----------
 async function shootAndSave() {
   const cpf = inputCPF.value.trim();
@@ -522,9 +545,6 @@ async function shootAndSave() {
   video.classList.add('hidden');
 
   try {
-    setUploadStatus('Autenticando…');
-    await ensureAuth();
-
     const id = (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2));
     const verifyUrl = `${VERIFY_BASE_URL}?id=${id}`;
 
@@ -536,9 +556,21 @@ async function shootAndSave() {
     const boxHeight = drawInfoOverlay(ctx, w, h, w * 0.28);
     await drawQrOnCanvas(ctx, w, h, verifyUrl, boxHeight);
 
-    // Versão final em alta qualidade (com QR) — é o que vai ser baixado
+    // Versão final em alta qualidade (com QR)
     const finalDataUrl = canvas.toDataURL('image/jpeg', 0.92);
     preview.src = finalDataUrl;
+
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const dnSlug = inputDN.value.trim().replace(/\s+/g, '-') || 'sem-dn';
+    const filename = `foto-${dnSlug}-${ts}.jpg`;
+
+    // Abre o compartilhamento (WhatsApp, etc.) logo em seguida ao clique,
+    // enquanto o navegador ainda reconhece a ação como iniciada pelo usuário
+    setUploadStatus('Abrindo compartilhamento…');
+    await shareOrDownloadPhoto(finalDataUrl, filename);
+
+    setUploadStatus('Autenticando…');
+    await ensureAuth();
 
     setUploadStatus('Compactando foto para o banco de dados…');
     const compressed = await compressToFit(canvas, MAX_FOTO_BASE64_LEN);
@@ -566,14 +598,6 @@ async function shootAndSave() {
       createdAt
     });
 
-    // Baixa a foto final automaticamente
-    const link = document.createElement('a');
-    const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    const dn = inputDN.value.trim().replace(/\s+/g, '-') || 'sem-dn';
-    link.download = `foto-${dn}-${ts}.jpg`;
-    link.href = finalDataUrl;
-    link.click();
-
     setUploadStatus('Salvo com sucesso ✔ — ID ' + id, 'ok');
 
     // Limpa os campos e volta pra câmera, pronta para a próxima foto
@@ -585,7 +609,7 @@ async function shootAndSave() {
   } catch (err) {
     setUploadStatus('Erro ao salvar: ' + err.message, 'err');
     btnShoot.disabled = false;
-    btnShoot.textContent = 'Tirar foto e salvar';
+    btnShoot.textContent = 'Tirar foto e compartilhar';
   }
 }
 
